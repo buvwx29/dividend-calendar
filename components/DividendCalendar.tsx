@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { dividends, type Market } from "@/lib/dividends";
+import { useMemo, useState, useEffect } from "react";
+import { getAllDividends, type Market, type Dividend } from "@/lib/dividends";
 
 type Filter = "all" | Market;
 type Sort = "exDate" | "yield";
@@ -49,11 +49,33 @@ function StarIcon({ filled }: { filled: boolean }) {
 }
 
 export default function DividendCalendar() {
+  // 배당 데이터를 상태로 관리 (처음엔 빈 배열로 시작)
+  const [dividends, setDividends] = useState<Dividend[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [filter, setFilter] = useState<Filter>("all");
   const [sort, setSort] = useState<Sort>("exDate");
-  const [watched, setWatched] = useState<Set<string>>(
-    new Set(dividends.filter((d) => d.watched).map((d) => d.id))
-  );
+  const [watched, setWatched] = useState<Set<string>>(new Set());
+
+  // 컴포넌트가 처음 화면에 나타날 때, API에서 배당 데이터를 가져옴
+  useEffect(() => {
+    async function loadDividends() {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await getAllDividends();
+        setDividends(data);
+        setWatched(new Set(data.filter((d) => d.watched).map((d) => d.id)));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "데이터를 불러오지 못했습니다");
+        console.error("배당 데이터 로딩 실패:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadDividends();
+  }, []); // 빈 배열 = 처음 한 번만 실행
 
   function toggleWatch(id: string) {
     setWatched((prev) => {
@@ -72,7 +94,7 @@ export default function DividendCalendar() {
         : a.exDate.localeCompare(b.exDate)
     );
     return list;
-  }, [filter, sort]);
+  }, [dividends, filter, sort]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, typeof filtered>();
@@ -88,6 +110,34 @@ export default function DividendCalendar() {
   const avgYield =
     filtered.reduce((sum, d) => sum + d.yieldPct, 0) / (filtered.length || 1);
   const watchedCount = filtered.filter((d) => watched.has(d.id)).length;
+
+  // 로딩 중이면 안내 문구 표시
+  if (loading) {
+    return (
+      <div className="max-w-[680px] mx-auto py-8 px-4">
+        <p className="text-sm text-neutral-400 text-center py-12">
+          배당 일정을 불러오는 중...
+        </p>
+      </div>
+    );
+  }
+
+  // 에러가 발생했으면 에러 메시지 + 재시도 버튼 표시
+  if (error) {
+    return (
+      <div className="max-w-[680px] mx-auto py-8 px-4">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+          <p className="text-sm text-red-700 mb-3">오류: {error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700"
+          >
+            다시 시도
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-[680px] mx-auto py-8 px-4">
